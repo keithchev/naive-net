@@ -77,16 +77,16 @@ class Dense(Layer):
 		self.parameter_names = ['weights', 'bias']
 
 		self.weights = Parameter(shape=(self.D_in[0], self.D_out[0]), 
-								initializer=initializer,
-								regularizer=regularizer,
-								trainable=True,
-								name='weights')
+					initializer=initializer,
+					regularizer=regularizer,
+					trainable=True,
+					name='weights')
 
 		self.bias   = Parameter(shape=self.D_out, 
-								initializer='zeros',
-								regularizer=None,
-								trainable=True,
-								name='bias')
+					initializer='zeros',
+					regularizer=None,
+					trainable=True,
+					name='bias')
 		self.reset()
 
 
@@ -204,16 +204,16 @@ class BatchNorm(Layer):
 		self.parameter_names = ['gamma', 'beta']
 
 		self.gamma = Parameter(shape=self.D_in, 
-								initializer='ones',
-								regularizer=None,
-								trainable=True,
-								name='gamma')
+					initializer='ones',
+					regularizer=None,
+					trainable=True,
+					name='gamma')
 
 		self.beta = Parameter(shape=self.D_in, 
-								initializer='zeros',
-								regularizer=None,
-								trainable=True,
-								name='beta')
+					initializer='zeros',
+					regularizer=None,
+					trainable=True,
+					name='beta')
 
 		self.reset()
 
@@ -305,16 +305,16 @@ class Conv2D(Layer):
 		self.parameter_names = ['kernel', 'bias']
 
 		self.kernel = Parameter(shape=(self.D_out[0], self.D_in[0], self.filter_shape[0], self.filter_shape[1]), 
-								initializer=initializer,
-								regularizer=regularizer,
-								trainable=True,
-								name='kernel')
+					initializer=initializer,
+					regularizer=regularizer,
+					trainable=True,
+					name='kernel')
 
 		self.bias = Parameter(shape=self.D_out[0], 
-								initializer='zeros',
-								regularizer=None,
-								trainable=True,
-								name='bias')
+					initializer='zeros',
+					regularizer=None,
+					trainable=True,
+					name='bias')
 		self.reset()
 
 
@@ -371,8 +371,7 @@ class Conv2D(Layer):
 				x_crop = x_pad[:, :, (h - H_off):(h + H_f - H_off), (w - W_off):(w + W_f - W_off)]
 
 				out[:, :, h_out, w_out] += (self.kernel.value[None, :, :, :, :] * x_crop[:, None, :, :, :]).sum(axis=(2,3,4))
-
-
+				
 		self._x = x
 		self._x_pad = x_pad
 
@@ -470,7 +469,6 @@ class MaxPool2D(Layer):
 
 		for h_out, h in enumerate(H_list):
 			for w_out, w in enumerate(W_list):
-
 				x_crop = x[:, :, h:h + H_p, w:w + W_p]
 				out[:, :, h_out, w_out] = np.max(x_crop, axis=(2, 3))
 
