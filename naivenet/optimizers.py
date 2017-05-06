@@ -29,10 +29,10 @@ class Optimizer(object):
 		self._init_optz_rate = optz_rate
 		self.reset()
 
-	def initialize_opt(self, param_val):
+	def reset_parameter(self, parameter):
 		raise NotImplementedError('Optimzer initialization not implemented')
 
-	def step(self, param_val, param_grad, param_opt):
+	def step(self, parameter):
 		raise NotImplementedError('Optimizer step not implemented')
 
 	def reset(self):
@@ -43,19 +43,16 @@ class Optimizer(object):
 		return self
 
 
-
 class VanillaSGD(Optimizer):
 
 	def __init__(self, optz_rate=None):
 		Optimizer.__init__(self, optz_rate=optz_rate)
 
-	def initialize_opt(self, param_val):
-		return None
+	def reset_parameter(self, parameter):
+		pass
 
-	def step(self, param_val, param_grad, param_opt=None):
-
-		param_val -= self.optz_rate * param_grad
-		return param_val, param_opt
+	def step(self, parameter):
+		parameter.value -= self.optz_rate * parameter.gradient
 
 
 class MomentumSGD(Optimizer):
@@ -65,19 +62,17 @@ class MomentumSGD(Optimizer):
 		self.momentum = momentum
 
 
-	def initialize_opt(self, param_val):
-		return {'velocity': np.zeros_like(param_val)}
+	def reset_parameter(self, parameter):
+		parameter.opt_data = {'velocity': np.zeros_like(parameter.value)}
 
 
-	def step(self, param_val, param_grad, param_opt):
+	def step(self, parameter):
 
-		velocity = param_opt.get('velocity')
-		velocity = self.momentum * velocity - self.optz_rate * param_grad
+		velocity = parameter.opt_data.get('velocity')
+		velocity = self.momentum * velocity - self.optz_rate * parameter.gradient
 		
-		param_val += velocity
-		param_opt['velocity'] = velocity
-
-		return param_val, param_opt
+		parameter.value += velocity
+		parameter.opt_data['velocity'] = velocity
 
 
 
@@ -85,22 +80,19 @@ class RMSProp(Optimizer):
 
 	def __init__(self, optz_rate=None, beta2=0.99):
 		Optimizer.__init__(self, optz_rate=optz_rate)
-
 		self.decay_rate = decay_rate
 
 
-	def initialize_opt(self, param_val):
-		return {'running_moment2': np.zeros_like(param_val)}
+	def reset_parameter(self, parameter):
+		parameter.opt_data = {'running_moment2': np.zeros_like(parameter.value)}
 
 
-	def step(self, param_val, param_grad, param_opt):
+	def step(self, parameter):
 
-		running_moment2 = self.beta2 * param_opt['running_moment2'] + (1-self.beta2) * (param_grad**2)
-		param_val -= self.optz_rate * param_grad / (np.sqrt(running_moment2) + self._EPSILON)
+		running_moment2 = self.beta2 * parameter.opt_data['running_moment2'] + (1-self.beta2) * (parameter.gradient**2)
+		parameter.value -= self.optz_rate * parameter.gradient / (np.sqrt(running_moment2) + self._EPSILON)
 
-		param_opt['running_moment2'] = running_moment2
-
-		return param_val, param_opt
+		parameter.opt_data['running_moment2'] = running_moment2
 
 
 
@@ -108,31 +100,28 @@ class Adam(Optimizer):
 
 	def __init__(self, optz_rate=None, beta1=0.9, beta2=0.999):
 		Optimizer.__init__(self, optz_rate=optz_rate)
-
 		self.beta1 = beta1
 		self.beta2 = beta2
 		
 
-	def initialize_opt(self, param_val):
+	def reset_parameter(self, parameter):
 
-		return {'running_moment1': np.zeros_like(param_val),
-				'running_moment2': np.zeros_like(param_val),
-				'count': 0}
+		parameter.opt_data = {'running_moment1': np.zeros_like(parameter.value),
+							'running_moment2': np.zeros_like(parameter.value),
+							'count': 0}
 
 
-	def step(self, param_val, param_grad, param_opt):
+	def step(self, parameter):
 		
-		param_opt['count'] += 1
+		parameter.opt_data['count'] += 1
 
-		running_moment1 = self.beta1 * param_opt['running_moment1'] + (1-self.beta1) * param_grad
-		running_moment2 = self.beta2 * param_opt['running_moment2'] + (1-self.beta2) * (param_grad**2)
+		running_moment1 = self.beta1 * parameter.opt_data['running_moment1'] + (1-self.beta1) * parameter.gradient
+		running_moment2 = self.beta2 * parameter.opt_data['running_moment2'] + (1-self.beta2) * (parameter.gradient**2)
 
-		rm1t = running_moment1 / (1 - self.beta1**param_opt['count'])
-		rm2t = running_moment2 / (1 - self.beta2**param_opt['count'])
+		rm1t = running_moment1 / (1 - self.beta1**parameter.opt_data['count'])
+		rm2t = running_moment2 / (1 - self.beta2**parameter.opt_data['count'])
 
-		param_val = self.optz_rate * rm1t / (np.sqrt(rm2t) + self._EPSILON)		
+		parameter.value = self.optz_rate * rm1t / (np.sqrt(rm2t) + self._EPSILON)		
 
-		param_opt['running_moment1'] = running_moment1
-		param_opt['running_moment2'] = running_moment2
-
-		return param_val, param_opt
+		parameter.opt_data['running_moment1'] = running_moment1
+		parameter.opt_data['running_moment2'] = running_moment2

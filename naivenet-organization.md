@@ -28,6 +28,16 @@ layers.py
 
 
 
+			   .kernel = Parameter(name, shape, initializer, trainable)
+			   .parameters = ['kernel', 'bias']
+
+parameter.py
+		.Parameter
+				.reset
+				.value
+				.gradient
+				.optimization_data = {running_velocity:, running_moment: }
+
 losses.py
 		.SoftmaxLoss(num_classes=num_classes)
 											.calc_loss(out, y)

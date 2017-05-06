@@ -1,4 +1,4 @@
-import os, glob, pdb, datetime, time
+import os, glob, pdb
 import numpy as np
 
 from naivenet.constants import _EPSILON
@@ -17,7 +17,7 @@ def test_model(model, num_sample=None):
 	batch_size = 32
 
 	x = np.random.randn(batch_size, *model.D_in)
-	y = np.random.randint(model.loss.num_classes, size=batch_size)
+	y = np.random.randint(model._loss_function.num_classes, size=batch_size)
 
 	# re-initialize all of the parameters/gradients
 	model.reset()
@@ -34,9 +34,9 @@ def test_model(model, num_sample=None):
 	for layer_index, layer in enumerate(model.layers):
 
 		# layers without params (activation layers) will be skipped here
-		for param in layer.params:
+		for parameter_name in layer.parameter_names:
 
-			shape = layer.param_vals[param].shape
+			shape = layer[parameter_name].shape
 			if num_sample is not None:
 				inds = []
 				flat_inds = np.random.choice(np.prod(shape), num_sample)
@@ -45,16 +45,16 @@ def test_model(model, num_sample=None):
 			else:
 				inds = None
 
-			grad  = calc_grad(loss_function, layer.param_vals[param], inds=inds)
-			error = calc_error(grad, layer.param_grads[param], inds=inds)
+			grad  = calc_grad(loss_function, layer[parameter_name].value, inds=inds)
+			error = calc_error(grad, layer[parameter_name].gradient, inds=inds)
 
-			print('Layer %s (%s) %s error: %e' % (layer_index, layer.__class__.__name__, param, error))
-			print('------------------------------------------------------------')
+			print('Layer %s (%s) %s error: %e' % (layer_index, layer.__class__.__name__, parameter_name, error))
+			print('-'*75)
 
 			if inds is not None:
 				print('Numeric      Analytic')
 				for i, ind in enumerate(inds):
-					print('%0.6f     %0.6f' % (grad[i], layer.param_grads[param][ind]))
+					print('%0.6f     %0.6f' % (grad[i], layer[parameter_name].gradient[ind]))
 
 			print('\n')
 

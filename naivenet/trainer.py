@@ -81,20 +81,21 @@ class Trainer(object):
 
 		'''
 
-		self.loss_at_batch = []
+		self.loss_at_batch     = []
 		self.accuracy_at_epoch = {'train': [], 'val': []}
 
 		# reset the optimizer - this resets the optz_rate (if rate decay was previously applied)
 		self._optimizer.reset()
 
 		# hard reset - re-initialize all layer parameters
-		if hard: self.model.reset()
+		if hard: 
+			self.model.reset()
 
-		# set/reset the optimization dict associated with each parameter in each layer
-		# This contains the per-parameter running averages used by momentumSGD, rmsprop, adam, etc
-		for layer in self._model.layers:
-			for param in layer.params:
-				layer.param_opts[param] = self._optimizer.initialize_opt(layer.param_vals[param])
+			# set/reset the optimization dict associated with each parameter in each layer
+			# This contains the per-parameter running averages used by momentumSGD, rmsprop, adam, etc
+			for layer in self._model.layers:
+				for parameter_name in layer.parameter_names:
+					self._optimizer.reset_parameter(layer[parameter_name])
 
 
 	def train(self):
@@ -139,13 +140,8 @@ class Trainer(object):
 		self.model.backward()
 
 		for layer in self.model.layers:
-			for param in layer.params:
-				param_val, param_opt = self._optimizer.step(layer.param_vals[param],
-															layer.param_grads[param],
-															layer.param_opts[param])
-
-				layer.param_vals[param] = param_val
-				layer.param_opts[param] = param_opt
+			for parameter_name in layer.parameter_names:
+				self._optimizer.step(layer[parameter_name])
 
 		return loss
 

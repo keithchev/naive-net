@@ -13,7 +13,7 @@ import constants
 
 def load_trainer(data, net):
 
-	opt = optimizers.VanillaSGD(optz_rate=0.001)
+	opt = optimizers.MomentumSGD(optz_rate=0.01)
 
 	t = trainer.Trainer(rate_decay=1.0, batch_size=32, num_epochs=3, verbose=True)
 
@@ -25,6 +25,123 @@ def load_trainer(data, net):
 
 	return t
 
+def cnn2():
+
+	filter_sz   = 5
+	conv_pad    = 2
+	conv_stride = 1
+	pool_sz     = 2
+	pool_stride = 2
+	num_classes = 10
+
+	m = model.Model(lambda_=1e-3)
+
+	# weight initializer for ReLu units
+	kernel_initializer  = lambda shape: np.sqrt(2.0/np.prod(shape[1:]))
+	weights_initializer = lambda shape: np.sqrt(2.0/shape[0])
+
+
+	# layer_defs.push({type:'conv', sx:5, filters:16, stride:1, pad:2, activation:'relu'});
+	C, H, W = (3, 32, 32)
+	num_filters = 16
+
+	H_conv_out = 1 + (H + 2*conv_pad - filter_sz)/conv_stride
+	W_conv_out = 1 + (W + 2*conv_pad - filter_sz)/conv_stride
+
+	H_pool_out = 1 + (H_conv_out - pool_sz)/pool_stride
+	W_pool_out = 1 + (W_conv_out - pool_sz)/pool_stride
+
+	num_pool_vx = num_filters * H_pool_out * W_pool_out
+
+
+	m.add_layer(layers.Conv2D(D_in=(C, H, W), 
+							  D_out=(num_filters, H_conv_out, W_conv_out), 
+							  filter_shape=(filter_sz, filter_sz), 
+							  stride=conv_stride, 
+							  pad=conv_pad, 
+							  initializer=kernel_initializer))
+
+	m.add_layer(layers.Activation('relu'))
+
+	m.add_layer(layers.MaxPool2D(D_in=(num_filters, H_conv_out, W_conv_out), 
+							     D_out=(num_filters, H_pool_out, W_pool_out), 
+							     filter_shape=(pool_sz, pool_sz), 
+							     stride=pool_stride))
+
+
+	D_out = (num_filters, H_pool_out, W_pool_out)
+	
+
+	# layer_defs.push({type:'conv', sx:5, filters:20, stride:1, pad:2, activation:'relu'});
+	C, H, W = D_out
+	num_filters = 20
+
+	H_conv_out = 1 + (H + 2*conv_pad - filter_sz)/conv_stride
+	W_conv_out = 1 + (W + 2*conv_pad - filter_sz)/conv_stride
+
+	H_pool_out = 1 + (H_conv_out - pool_sz)/pool_stride
+	W_pool_out = 1 + (W_conv_out - pool_sz)/pool_stride
+
+	num_pool_vx = num_filters * H_pool_out * W_pool_out
+
+	m.add_layer(layers.Conv2D(D_in=(C, H, W), 
+							  D_out=(num_filters, H_conv_out, W_conv_out), 
+							  filter_shape=(filter_sz, filter_sz), 
+							  stride=conv_stride, 
+							  pad=conv_pad, 
+							  initializer=kernel_initializer))
+
+	m.add_layer(layers.Activation('relu'))
+
+	m.add_layer(layers.MaxPool2D(D_in=(num_filters, H_conv_out, W_conv_out), 
+							     D_out=(num_filters, H_pool_out, W_pool_out), 
+							     filter_shape=(pool_sz, pool_sz), 
+							     stride=pool_stride))
+
+	D_out = (num_filters, H_pool_out, W_pool_out)
+
+
+	# layer_defs.push({type:'conv', sx:5, filters:20, stride:1, pad:2, activation:'relu'});
+	C, H, W = D_out
+	num_filters = 20
+
+	H_conv_out = 1 + (H + 2*conv_pad - filter_sz)/conv_stride
+	W_conv_out = 1 + (W + 2*conv_pad - filter_sz)/conv_stride
+
+	H_pool_out = 1 + (H_conv_out - pool_sz)/pool_stride
+	W_pool_out = 1 + (W_conv_out - pool_sz)/pool_stride
+
+	num_pool_vx = num_filters * H_pool_out * W_pool_out
+
+	m.add_layer(layers.Conv2D(D_in=(C, H, W), 
+							  D_out=(num_filters, H_conv_out, W_conv_out), 
+							  filter_shape=(filter_sz, filter_sz), 
+							  stride=conv_stride, 
+							  pad=conv_pad, 
+							  initializer=kernel_initializer))
+
+	m.add_layer(layers.Activation('relu'))
+
+	m.add_layer(layers.MaxPool2D(D_in=(num_filters, H_conv_out, W_conv_out), 
+							     D_out=(num_filters, H_pool_out, W_pool_out), 
+							     filter_shape=(pool_sz, pool_sz), 
+							     stride=pool_stride))
+
+	D_out = (num_filters, H_pool_out, W_pool_out)
+
+
+	m.add_layer(layers.Flatten(D_in=D_out))
+
+	# Final dense layer
+	m.add_layer(layers.Dense(D_in=(np.prod(D_out),), 
+							 D_out=(num_classes,), 
+							 initializer=weights_initializer))
+
+	# softmax loss
+	m.loss_function = losses.SoftmaxLoss(num_classes=num_classes)
+
+	return m
+
 
 def cnn(input_shape=(3, 32, 32),
 		conv_pad=2, conv_stride=1, 
@@ -35,7 +152,7 @@ def cnn(input_shape=(3, 32, 32),
 		num_dense=10):
 
 	'''
-	simple CNN architecture for cifar10
+	generic CNN architecture with dimensions for cifar10
 
 	'''
 
@@ -49,17 +166,18 @@ def cnn(input_shape=(3, 32, 32),
 
 	num_pool_vx = num_filters * H_pool_out * W_pool_out 		# 2560
 
-	m = model.Model(regz=1e-3)
+	m = model.Model(lambda_=1e-3)
 
 	# weight initializer for ReLu units
-	initializer = lambda n: np.sqrt(2.0/n)
+	kernel_initializer  = lambda shape: np.sqrt(2.0/np.prod(shape[1:]))
+	weights_initializer = lambda shape: np.sqrt(2.0/shape[0])
 
 	m.add_layer(layers.Conv2D(D_in=(C, H, W), 
 							  D_out=(num_filters, H_conv_out, W_conv_out), 
 							  filter_shape=(filter_sz, filter_sz), 
 							  stride=conv_stride, 
 							  pad=conv_pad, 
-							  initializer=initializer))
+							  initializer=kernel_initializer))
 
 	m.add_layer(layers.Activation('relu'))
 
@@ -75,7 +193,7 @@ def cnn(input_shape=(3, 32, 32),
 
 	m.add_layer(layers.Dense(D_in=(num_pool_vx,), 
 							 D_out=(num_dense,), 
-							 initializer=initializer))
+							 initializer=weights_initializer))
 
 	m.add_layer(layers.BatchNorm(D_in=(num_dense,)))
 	m.add_layer(layers.Activation('relu'))
@@ -83,10 +201,10 @@ def cnn(input_shape=(3, 32, 32),
 	# Final dense layer
 	m.add_layer(layers.Dense(D_in=(num_dense,), 
 							 D_out=(num_classes,), 
-							 initializer=initializer))
+							 initializer=weights_initializer))
 
 	# softmax loss
-	m.loss = losses.SoftmaxLoss(num_classes=num_classes)
+	m.loss_function = losses.SoftmaxLoss(num_classes=num_classes)
 
 	return m
 
@@ -106,7 +224,7 @@ def net3():
 
 	init_weight_std = .1
 
-	m = model.Model(regz=1e-3)
+	m = model.Model(lambda_=1e-3)
 
 
 	# First hidden layer (dense - batchnorm - relu)
@@ -148,7 +266,7 @@ def net1():
 	D_out = (num_classes,)
 	momentum    = 0.9
 
-	m = model.Model(regz=1e-3)
+	m = model.Model(lambda_=1e-3)
 
 	m.add_layer(layers.Dense(D_in=D_in, D_out=D_out))
 	m.add_layer(layers.BatchNorm(D_in=D_hidden, momentum=momentum))

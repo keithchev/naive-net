@@ -1,4 +1,4 @@
-import os, glob, pdb, datetime, time
+import os, glob, pdb
 import numpy as np
 
 import losses
@@ -17,12 +17,11 @@ class Model(object):
 		- predict(x)
 	'''
 
-	def __init__(self, regz=0.0):
+	def __init__(self, lambda_=0.0):
 
-		# private variables
-		self._loss = None	# loss function - must be set externally after initialization
-		self._regz = regz 	# L2 regularization constant
-		self._num_layers = 0
+		self.lambda_        = lambda_ 	# regularization prefactor
+		self._num_layers    = 0
+		self._loss_function = None		# loss function - must be set externally after initialization
 
 		self._x, self._y = None, None
 
@@ -41,17 +40,20 @@ class Model(object):
 
 
 	@property
-	def loss(self):
-		return self._loss
+	def loss_function(self):
+		print(self._loss_function.__class__.__name__)
 
-	@loss.setter
-	def loss(self, _loss):
-		if not isinstance(_loss, losses.Loss):
+	@loss_function.setter
+	def loss_function(self, _loss_function):
+		if not isinstance(_loss_function, losses.Loss):
 			raise ValueError('Loss function must be a Loss instance')
-		self._loss = _loss
+		self._loss_function = _loss_function
 
 
 	def reset(self):
+
+		self._x, self._y = None, None
+
 		for layer in self.layers:
 			layer.reset()
 		return self
@@ -72,7 +74,7 @@ class Model(object):
 
 		self._x, self._y = x, y
 
-		if self._loss is None:
+		if self._loss_function is None:
 			raise ValueError('Loss function not set')
 			return 
 
@@ -83,12 +85,12 @@ class Model(object):
 		for i in range(1, self._num_layers):
 			out = self.layers[i].forward(out)
 
-		loss = self.loss.calc_loss(out, y)
+		loss = self._loss_function.calc_loss(out, y)
 
-		if self._regz > 0:
+		if self.lambda_ > 0:
 			for layer in self.layers:
-				if 'w' in layer.params:
-					loss += 0.5*self._regz * (layer.param_vals['w']**2).sum()
+				for parameter_name in layer.parameter_names:
+					loss += layer[parameter_name].regularize(self.lambda_, mode='loss')
 
 		return loss
 
@@ -102,15 +104,15 @@ class Model(object):
 		if self._x is None:
 			raise ValueError('Must call model.forward before model.backward')
 
-		dloss_dout = self.loss.calc_dloss()
+		dloss_dout = self._loss_function.calc_dloss()
 
 		for i in np.arange(self._num_layers-1, -1, -1):
 			dloss_dout = self.layers[i].backward(dloss_dout)
 
-		if self._regz > 0:
+		if self.lambda_ > 0:
 			for layer in self.layers:
-				if 'w' in layer.params:
-					layer.param_grads['w'] += self._regz * layer.param_vals['w']
+				for parameter_name in layer.parameter_names:
+					layer[parameter_name].regularize(self.lambda_, mode='gradient')
 
 
 	def predict(self, x):
@@ -140,11 +142,16 @@ class Model(object):
 		'''
 
 		print('***Model info***')
-		print('Regularization: %f' % self._regz)
+		print('Regularization prefactor: %f' % self.lambda_)
 		print('Layers:')
 
 		for layer in self.layers:
-			print('%s    %s --> %s' % (layer.__class__.__name__, layer.D_in, layer.D_out))
+			print('%s    %s -> %s' % (layer.__class__.__name__, layer.D_in, layer.D_out))
+			print('-'*75)
+			for parameter_name in layer.parameter_names:
+				print('%s  %s  (Regz: %s)' % (parameter_name, layer[parameter_name].shape, layer[parameter_name].regularizer))
+			print('\n')
 
-		print('%s (%s classes)' % (self._loss.__class__.__name__, self._loss.num_classes))
+		print('Loss:')
+		print('%s (%s classes)' % (self._loss_function.__class__.__name__, self._loss_function.num_classes))
 

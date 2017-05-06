@@ -1,8 +1,9 @@
-import os, glob, pdb, datetime, time
+import os, pdb
 import numpy as np
 
 import activations
 import constants
+from parameter import Parameter
 
 class Layer(object):
 
@@ -23,22 +24,22 @@ class Layer(object):
 		# placeholder for param dicts
 		# 'params' here refers to all layer params that are trained
 
-		self.D_in  = None
-		self.D_out = None
+		self.D_in   = None
+		self.D_out  = None
+		self.parameter_names = []   # list of parameter keys: 'weights', 'bias', 'kernel', etc
 
-		self.params      = []   # list of parameter keys: 'w', 'b', etc
-		self.param_grads = {}	# parameter gradients
-		self.param_vals  = {}	# parameter values
-		self.param_opts  = {}	# running mean/variance for adam
+
+	def __getitem__(self, key):
+		return getattr(self, key)
 
 	def reset(self):
 		'''
-		reset the layer's generic parameter dicts 
+		reset the layer's data 
 		'''
 		self._x = None
-		self.param_grads = {}
-		self.param_vals  = {}
-		self.param_opts  = {}
+
+		for parameter_name in self.parameter_names:
+			self[parameter_name].reset()
 
 	def forward(self, x, mode='train'):
 		raise NotImplementedError('Forward pass not implemented')
@@ -56,11 +57,11 @@ class Dense(Layer):
 	Inputs:
 		D_in:  scalar; dimension of the input
 		D_out: scalar; dimension of the output (number of nodes in this layer)
-		initializer: function of input dimension that returns std dev of initial weights
+		initializer: function of kernel shape that returns std dev of initial weights
 					 (to set constant std, use initializer=lambda _: std)
 	"""
 
-	def __init__(self, D_in=None, D_out=None, initializer=None):
+	def __init__(self, D_in=None, D_out=None, initializer=None, regularizer='L2'):
 
 		super(Dense, self).__init__()
 
@@ -71,22 +72,22 @@ class Dense(Layer):
 		self.D_out = D_out
 
 		if initializer is None:
-			initializer = lambda n: np.sqrt(1./n)
+			initializer = lambda shape: np.sqrt(1./shape[0])
 		
-		self.initializer = initializer 
+		self.parameter_names = ['weights', 'bias']
 
-		self.params = ['w', 'b']
+		self.weights = Parameter(shape=(self.D_in[0], self.D_out[0]), 
+								initializer=initializer,
+								regularizer=regularizer,
+								trainable=True,
+								name='weights')
 
+		self.bias   = Parameter(shape=self.D_out, 
+								initializer='zeros',
+								regularizer=None,
+								trainable=True,
+								name='bias')
 		self.reset()
-
-	def reset(self):
-		Layer.reset(self)
-
-		self.param_vals['w'] = np.random.randn(self.D_in[0], self.D_out[0]) * self.initializer(self.D_in[0])
-		self.param_vals['b'] = np.zeros(self.D_out)
-
-		self.param_grads['w'] = np.zeros_like(self.param_vals['w'])
-		self.param_grads['b'] = np.zeros_like(self.param_vals['b'])
 
 
 	def forward(self, x, mode='train'):
@@ -99,8 +100,7 @@ class Dense(Layer):
 
 		self._x = x
 		self._N = x.shape[0]
-
-		out = x.dot(self.param_vals['w']) + self.param_vals['b']
+		out = x.dot(self.weights.value) + self.bias.value
 		return out
 
 
@@ -114,10 +114,10 @@ class Dense(Layer):
 
 		dloss_db = dloss_dout.sum(axis=0)
 		dloss_dw = (dloss_dout[:, None, :] * self._x[:, :, None]).sum(axis=0)
-		dloss_dx = (dloss_dout.dot(self.param_vals['w'].transpose())).reshape(self._N, *self.D_in)
-
-		self.param_grads['w'] = dloss_dw
-		self.param_grads['b'] = dloss_db
+		dloss_dx = (dloss_dout.dot(self.weights.value.transpose())).reshape(self._N, *self.D_in)
+		
+		self.bias.gradient    = dloss_db
+		self.weights.gradient = dloss_dw
 
 		return dloss_dx
 
@@ -156,12 +156,11 @@ class Dropout(Layer):
 
 	def __init__(self, p=0.5):
 		super(Dropout, self).__init__()
-
 		self.p = p
 
 	def forward(self, x, mode='train'):
-		self._mode = mode
 
+		self._mode = mode
 		if self._mode=='train':
 			drop = np.random.rand(*x.shape) > self.p
 			out = x/self.p
@@ -200,19 +199,27 @@ class BatchNorm(Layer):
 			raise ValueError('batchNorm input must be one-dimensional')
 
 		self.D_in     = D_in
-		self.params   = ['gamma', 'beta']
 		self.momentum = momentum
+
+		self.parameter_names = ['gamma', 'beta']
+
+		self.gamma = Parameter(shape=self.D_in, 
+								initializer='ones',
+								regularizer=None,
+								trainable=True,
+								name='gamma')
+
+		self.beta = Parameter(shape=self.D_in, 
+								initializer='zeros',
+								regularizer=None,
+								trainable=True,
+								name='beta')
+
 		self.reset()
 
 
 	def reset(self):
 		Layer.reset(self)
-
-		self.param_vals['gamma'] = np.ones(self.D_in)
-		self.param_vals['beta']  = np.zeros(self.D_in)
-
-		self.param_grads['gamma'] = np.zeros_like(self.param_vals['gamma'])
-		self.param_grads['beta']  = np.zeros_like(self.param_vals['beta'])
 
 		self._running_mean = np.zeros(self.D_in)
 		self._running_var  = np.zeros(self.D_in) 
@@ -224,13 +231,13 @@ class BatchNorm(Layer):
 		
 		if mode == 'train':
 
-			self._this_mean = x.mean(axis=0)
-			self._this_var  = x.var(axis=0)
+			self._current_mean = x.mean(axis=0)
+			self._current_var  = x.var(axis=0)
 
-			self._running_mean = self.momentum * self._running_mean + (1 - self.momentum)*self._this_mean
-			self._running_var  = self.momentum * self._running_var + (1 - self.momentum)*self._this_var
+			self._running_mean = self.momentum * self._running_mean + (1 - self.momentum)*self._current_mean
+			self._running_var  = self.momentum * self._running_var + (1 - self.momentum)*self._current_var
 
-			xhat = (x - self._this_mean) / (self._this_var + self._EPSILON)**.5
+			xhat = (x - self._current_mean) / (self._current_var + self._EPSILON)**.5
 
 		elif mode == 'test':
 			xhat = (x - self._running_mean) / (self._running_var + self._EPSILON)**.5
@@ -238,10 +245,9 @@ class BatchNorm(Layer):
 		else:
 			raise ValueError('Modes other than train and test not supported by BatchNorm')
 
-		out = self.param_vals['gamma'] * xhat + self.param_vals['beta']
-
 		self._x    = x
 		self._xhat = xhat
+		out = self.gamma.value * xhat + self.beta.value
 
 		return out
 
@@ -249,27 +255,25 @@ class BatchNorm(Layer):
 	def backward(self, dloss_dout):
 		# mode is always train
 
-		self.param_grads['beta']  = dloss_dout.sum(axis=0)
-		self.param_grads['gamma'] = (dloss_dout * self._xhat).sum(axis=0)
+		self.beta.gradient  = dloss_dout.sum(axis=0)
+		self.gamma.gradient = (dloss_dout * self._xhat).sum(axis=0)
 
 		# define intermediate variables for computing dloss_dx
 		N     = self._x.shape[0]
-		xcen  = self._x - self._this_mean
-		scale = (self._this_var + self._EPSILON)**(-0.5)
+		xcen  = self._x - self._current_mean
+		scale = (self._current_var + self._EPSILON)**(-0.5)
 
-		dloss_dxhat = self.param_vals['gamma'] * dloss_dout
+		dloss_dxhat = self.gamma.value * dloss_dout
 
 		dloss_dx = dloss_dxhat - dloss_dxhat.sum(axis=0)/N - scale**2 * xcen * (dloss_dxhat*xcen).sum(axis=0)/N
-
 		dloss_dx *= scale
 
 		return dloss_dx
 
 
-
 class Conv2D(Layer):
 
-	def __init__(self, D_in=None, D_out=None, filter_shape=None, stride=1, pad=0, initializer=None):
+	def __init__(self, D_in=None, D_out=None, filter_shape=None, stride=1, pad=0, initializer=None, regularizer='L2'):
 		'''
 		Two-dimensional convolutional layer
 
@@ -291,27 +295,27 @@ class Conv2D(Layer):
 		self.D_out = D_out 
 		self.filter_shape = filter_shape
 
-		if initializer is None:
-			initializer = lambda n: np.sqrt(1./n)
+		if initializer is None: initializer = lambda shape: np.sqrt(1./np.prod(shape[1:]))
 		
 		self.initializer = initializer  
 
 		self.pad    = pad
 		self.stride = stride
 
-		self.params = ['w', 'b']
+		self.parameter_names = ['kernel', 'bias']
 
+		self.kernel = Parameter(shape=(self.D_out[0], self.D_in[0], self.filter_shape[0], self.filter_shape[1]), 
+								initializer=initializer,
+								regularizer=regularizer,
+								trainable=True,
+								name='kernel')
+
+		self.bias = Parameter(shape=self.D_out[0], 
+								initializer='zeros',
+								regularizer=None,
+								trainable=True,
+								name='bias')
 		self.reset()
-
-
-	def reset(self):
-		Layer.reset(self)
-
-		self.param_vals['w'] = np.random.randn(self.D_out[0], self.D_in[0], *self.filter_shape) * self.initializer(self.D_in[0] * np.prod(self.filter_shape))
-		self.param_vals['b'] = np.zeros(self.D_out[0])
-
-		self.param_grads['w'] = np.zeros_like(self.param_vals['w'])
-		self.param_grads['b'] = np.zeros_like(self.param_vals['b'])
 
 
 	def forward(self, x, mode='train'):
@@ -333,7 +337,7 @@ class Conv2D(Layer):
 		pad, stride = self.pad, self.stride
 
 		N, F_in, H_in, W_in   = x.shape
-		F_out, F_in, H_f, W_f = self.param_vals['w'].shape
+		F_out, F_in, H_f, W_f = self.kernel.shape
 
 		H_out = 1 + (H_in + 2*self.pad - H_f) / self.stride
 		W_out = 1 + (W_in + 2*self.pad - W_f) / self.stride
@@ -358,7 +362,7 @@ class Conv2D(Layer):
 		out = np.zeros((N, F_out, H_out, W_out))
 
 		# add biases to each output slice
-		out += self.param_vals['b'][None, :, None, None]
+		out += self.bias.value[None, :, None, None]
 
 		# iterate over filter footprints (each separated by stride)
 		for h_out, h in enumerate(H_list):
@@ -366,7 +370,7 @@ class Conv2D(Layer):
 
 				x_crop = x_pad[:, :, (h - H_off):(h + H_f - H_off), (w - W_off):(w + W_f - W_off)]
 
-				out[:, :, h_out, w_out] += (self.param_vals['w'][None, :, :, :, :] * x_crop[:, None, :, :, :]).sum(axis=(2,3,4))
+				out[:, :, h_out, w_out] += (self.kernel.value[None, :, :, :, :] * x_crop[:, None, :, :, :]).sum(axis=(2,3,4))
 
 
 		self._x = x
@@ -394,13 +398,13 @@ class Conv2D(Layer):
 		'''
 		pad, stride = self.pad, self.stride
 
-		F_out, F_in, H_f, W_f = self.param_vals['w'].shape
+		F_out, F_in, H_f, W_f = self.kernel.shape
 		H_list, W_list, H_off, W_off = self._indexing_helpers
 
 		# gradient of the bias
-		self.param_grads['b'] = dloss_dout.sum(axis=3).sum(axis=2).sum(axis=0)
+		self.bias.gradient = dloss_dout.sum(axis=3).sum(axis=2).sum(axis=0)
 
-		self.param_grads['w'] = np.zeros_like(self.param_vals['w'])
+		self.kernel.gradient = np.zeros_like(self.kernel.value)
 
 		dloss_dx = np.zeros(self._x_pad.shape)
 
@@ -410,10 +414,10 @@ class Conv2D(Layer):
 				x_crop = self._x_pad[:, :, (h - H_off):(h + H_f - H_off), (w - W_off):(w + W_f - W_off)]
 
 				#  Fin, Fout, Hf, Wf                 	   N, Fout,            N, Fout, Fin, HH, WW             N, Fout, Fin, Hf, Wf
-				self.param_grads['w'] += np.sum(dloss_dout[:, :, h_out, w_out][:, :, None, None, None] * x_crop[:, None, :, :, :], axis=(0,))
+				self.kernel.gradient += np.sum(dloss_dout[:, :, h_out, w_out][:, :, None, None, None] * x_crop[:, None, :, :, :], axis=(0,))
 
 				#        N, Fout, 																				  N, Fout,            N, Fout, Fin,                N,  Fout, Fin, hf, wf
-				dloss_dx[:, :, (h - H_off):(h + H_f - H_off), (w - W_off):(w + W_f - W_off)] += np.sum(dloss_dout[:, :, h_out, w_out][:,:,None, None,None]*self.param_vals['w'][None, :, :, :, :], axis=(1,))
+				dloss_dx[:, :, (h - H_off):(h + H_f - H_off), (w - W_off):(w + W_f - W_off)] += np.sum(dloss_dout[:, :, h_out, w_out][:,:,None, None,None]*self.kernel.value[None, :, :, :, :], axis=(1,))
 
 
   		dloss_dx = dloss_dx[:, :, pad:-pad, pad:-pad]
@@ -438,8 +442,8 @@ class MaxPool2D(Layer):
 
 		super(MaxPool2D, self).__init__()
 
-		self.D_in  = D_in 
-		self.D_out = D_out 
+		self.D_in   = D_in 
+		self.D_out  = D_out 
 		self.stride = stride
 		self.filter_shape = filter_shape
 
