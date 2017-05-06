@@ -1,0 +1,13 @@
+*.py[cod]
+ignore/
+datasets/data/
+
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# virtualenv
+.venv
+venv/
+ENV/
+
