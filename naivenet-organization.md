@@ -21,15 +21,8 @@ layers.py
 
 
 <layer instance>
-				.param_vals  = {w, b}
-				.param_grads = {w, b}
-				.param_opts  = {w: {running_velocity:, running_moment: }, 
-							   {b: {running_velocity:, running_moment: }, }
-
-
-
-			   .kernel = Parameter(name, shape, initializer, trainable)
 			   .parameters = ['kernel', 'bias']
+			   .kernel = Parameter(name, shape, initializer, trainable)
 
 parameter.py
 		.Parameter
@@ -39,11 +32,9 @@ parameter.py
 				.optimization_data = {running_velocity:, running_moment: }
 
 losses.py
-		.SoftmaxLoss(num_classes=num_classes)
-											.calc_loss(out, y)
-											.calc_dloss()
-
-
+		.SoftmaxLoss(num_classes)
+								.calc_loss(out, y)
+								.calc_dloss()
 
 
 

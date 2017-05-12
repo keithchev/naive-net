@@ -4,8 +4,8 @@ _DTYPE = 'float32'
 _H = 1e-5
 
 def epsilon():
-	return _EPSILON
+    return _EPSILON
 
 def dtype():
-	return _DTYPE
+    return _DTYPE
 
